@@ -13,6 +13,8 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Rect;
+import android.media.AudioAttributes;
+import android.media.SoundPool;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -123,6 +125,15 @@ public class MainActivity extends AppCompatActivity {
         private Bullet bullet;
         private Map map;
         
+        // Sound effects
+        private SoundPool soundPool;
+        private int shootSoundId;
+        private int explosionSoundId;
+        private int hitSoundId;
+        private int moveSoundId;
+        private int gameOverSoundId;
+        private boolean soundEnabled = true;
+        
         // Control buttons
         private Button btnUp, btnDown, btnLeft, btnRight, btnFire;
         private Paint paint;
@@ -131,6 +142,7 @@ public class MainActivity extends AppCompatActivity {
         private Rect leftControlArea;
         private Rect rightControlArea;
         private float touchStartX, touchStartY;
+        private int lastMoveSoundFrame = 0;
 
         public GameView(Context context) {
             super(context);
@@ -140,11 +152,43 @@ public class MainActivity extends AppCompatActivity {
             paint = new Paint();
             paint.setAntiAlias(true);
             
+            // Initialize sound pool
+            initSound();
+            
             // Initialize game objects
             initGame();
             
             // Setup touch controls
             setupTouchControls();
+        }
+        
+        private void initSound() {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                AudioAttributes audioAttributes = new AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_GAME)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build();
+                
+                soundPool = new SoundPool.Builder()
+                    .setMaxStreams(5)
+                    .setAudioAttributes(audioAttributes)
+                    .build();
+            } else {
+                soundPool = new SoundPool(5, android.media.AudioManager.STREAM_MUSIC, 0);
+            }
+            
+            // Load sound effects
+            shootSoundId = soundPool.load(getContext(), R.raw.shoot, 1);
+            explosionSoundId = soundPool.load(getContext(), R.raw.explosion, 1);
+            hitSoundId = soundPool.load(getContext(), R.raw.hit, 1);
+            moveSoundId = soundPool.load(getContext(), R.raw.move, 1);
+            gameOverSoundId = soundPool.load(getContext(), R.raw.game_over, 1);
+        }
+        
+        private void playSound(int soundId) {
+            if (soundEnabled && soundPool != null) {
+                soundPool.play(soundId, 1.0f, 1.0f, 0, 0, 1.0f);
+            }
         }
 
         private void initGame() {
@@ -210,8 +254,14 @@ public class MainActivity extends AppCompatActivity {
                             // Fire bullet
                             if (bullet == null) {
                                 bullet = playerTank.fire();
+                                playSound(shootSoundId);
                             }
                         }
+                    }
+                    
+                    // Double tap on top center to toggle sound
+                    if (action == MotionEvent.ACTION_DOWN && x > screenWidth / 3 && x < 2 * screenWidth / 3 && y < 50) {
+                        soundEnabled = !soundEnabled;
                     }
                     
                     return true;
@@ -230,6 +280,12 @@ public class MainActivity extends AppCompatActivity {
                 }
             }
             gameThread = null;
+            
+            // Release sound pool resources
+            if (soundPool != null) {
+                soundPool.release();
+                soundPool = null;
+            }
         }
 
         public void resume() {
@@ -281,6 +337,12 @@ public class MainActivity extends AppCompatActivity {
             // Update player tank position
             if (playerTank.isMoving()) {
                 playerTank.update(map);
+                // Play move sound occasionally while moving
+                int currentFrame = (int)(System.currentTimeMillis() / 100);
+                if (currentFrame != lastMoveSoundFrame) {
+                    playSound(moveSoundId);
+                    lastMoveSoundFrame = currentFrame;
+                }
             }
             
             // Update enemy tank (simple AI)
@@ -293,11 +355,13 @@ public class MainActivity extends AppCompatActivity {
                 
                 // Check collision with walls
                 if (map.checkCollision(bullet.getBounds())) {
+                    playSound(hitSoundId);
                     bullet = null;
                 }
                 
                 // Check collision with enemy
                 if (enemyTank != null && bullet.getBounds().intersect(enemyTank.getBounds())) {
+                    playSound(explosionSoundId);
                     enemyTank = new Tank(400, 100, Color.RED);
                     bullet = null;
                 }
@@ -343,6 +407,10 @@ public class MainActivity extends AppCompatActivity {
             paint.setTextSize(20);
             canvas.drawText("Left: Move", 20, 30, paint);
             canvas.drawText("Right: Fire", getWidth() - 150, 30, paint);
+            
+            // Draw sound toggle hint
+            paint.setColor(soundEnabled ? Color.GREEN : Color.RED);
+            canvas.drawText("Sound: " + (soundEnabled ? "ON" : "OFF"), getWidth() / 2 - 40, 30, paint);
         }
     }
 
