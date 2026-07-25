@@ -532,33 +532,70 @@ public class MainActivity extends AppCompatActivity {
         }
         
         public void draw(Canvas canvas, Paint paint) {
-            paint.setColor(color);
+            // Draw detailed tank with tracks, body, turret and barrel
+            int tankX = (int)x;
+            int tankY = (int)y;
+            int size = 40;
+            int halfSize = size / 2;
             
-            // Draw tank body
-            Rect tankRect = new Rect((int)x, (int)y, (int)x + 40, (int)y + 40);
-            canvas.drawRect(tankRect, paint);
+            // Save canvas state for rotation
+            canvas.save();
+            canvas.translate(tankX + halfSize, tankY + halfSize);
             
-            // Draw cannon
-            paint.setStrokeWidth(5);
-            float cannonEndX = x + 20;
-            float cannonEndY = y + 20;
-            
+            // Rotate based on direction
             switch (direction) {
-                case DIRECTION_UP:
-                    cannonEndY = y - 10;
-                    break;
-                case DIRECTION_DOWN:
-                    cannonEndY = y + 50;
-                    break;
-                case DIRECTION_LEFT:
-                    cannonEndX = x - 10;
-                    break;
-                case DIRECTION_RIGHT:
-                    cannonEndX = x + 50;
-                    break;
+                case DIRECTION_UP: break;
+                case DIRECTION_RIGHT: canvas.rotate(90); break;
+                case DIRECTION_DOWN: canvas.rotate(180); break;
+                case DIRECTION_LEFT: canvas.rotate(-90); break;
             }
             
-            canvas.drawLine(x + 20, y + 20, cannonEndX, cannonEndY, paint);
+            canvas.translate(-halfSize, -halfSize);
+            
+            // Draw tracks (treads)
+            paint.setColor(Color.rgb(30, 30, 30)); // Dark gray for tracks
+            RectF leftTrack = new RectF(0, 0, size/6, size);
+            RectF rightTrack = new RectF(size - size/6, 0, size, size);
+            canvas.drawRect(leftTrack, paint);
+            canvas.drawRect(rightTrack, paint);
+            
+            // Track details (lines)
+            paint.setColor(Color.BLACK);
+            paint.setStrokeWidth(1);
+            for (int i = 0; i < size; i += size/8) {
+                canvas.drawLine(0, i, size/6, i, paint);
+                canvas.drawLine(size - size/6, i, size, i, paint);
+            }
+            
+            // Draw tank body
+            paint.setColor(color);
+            RectF body = new RectF(size/6, size/8, size - size/6, size - size/8);
+            canvas.drawRect(body, paint);
+            
+            // Body detail (lighter stripe)
+            int lighterColor = Color.rgb(
+                Math.min(255, Color.red(color) + 40),
+                Math.min(255, Color.green(color) + 40),
+                Math.min(255, Color.blue(color) + 40)
+            );
+            paint.setColor(lighterColor);
+            canvas.drawRect(size/4, size/4, size - size/4, size/2, paint);
+            
+            // Draw turret (circle)
+            paint.setColor(Color.rgb(180, 180, 180)); // Silver turret
+            canvas.drawCircle(size/2, size/2, size/4, paint);
+            
+            // Draw barrel
+            paint.setColor(Color.GRAY);
+            RectF barrel = new RectF(size/2 - size/12, 0, size/2 + size/12, size/3);
+            canvas.drawRect(barrel, paint);
+            
+            // Barrel tip (darker)
+            paint.setColor(Color.DKGRAY);
+            canvas.drawRect(size/2 - size/10, 0, size/2 + size/10, size/6, paint);
+            
+            // Restore canvas
+            canvas.restore();
         }
     }
 
@@ -612,6 +649,7 @@ public class MainActivity extends AppCompatActivity {
     // Map class
     class Map {
         private Rect[] walls;
+        private boolean[] wallTypes; // true = brick, false = steel
         private int level;
         
         // Original Battle City level layouts (35 levels)
@@ -698,6 +736,7 @@ public class MainActivity extends AppCompatActivity {
         private void loadLevel(int levelNum) {
             // Create walls list
             java.util.ArrayList<Rect> wallList = new java.util.ArrayList<>();
+            java.util.ArrayList<Boolean> typeList = new java.util.ArrayList<>();
             
             // Get level data or generate if not defined
             String[] levelData = null;
@@ -715,18 +754,23 @@ public class MainActivity extends AppCompatActivity {
                         if (c == '#' || c == '@') { // Brick or steel wall
                             wallList.add(new Rect(col * cellSize, row * cellSize, 
                                 col * cellSize + cellSize, row * cellSize + cellSize));
+                            typeList.add(c == '#'); // true for brick, false for steel
                         }
                     }
                 }
             } else {
                 // Generate procedural level for undefined levels
-                generateProceduralLevel(wallList, levelNum);
+                generateProceduralLevel(wallList, typeList, levelNum);
             }
             
             walls = wallList.toArray(new Rect[0]);
+            wallTypes = new boolean[wallList.size()];
+            for (int i = 0; i < wallList.size(); i++) {
+                wallTypes[i] = typeList.get(i);
+            }
         }
         
-        private void generateProceduralLevel(java.util.ArrayList<Rect> wallList, int levelNum) {
+        private void generateProceduralLevel(java.util.ArrayList<Rect> wallList, java.util.ArrayList<Boolean> typeList, int levelNum) {
             // Generate symmetric patterns based on level number
             int cellSize = 40;
             int seed = levelNum * 7;
@@ -734,24 +778,32 @@ public class MainActivity extends AppCompatActivity {
             // Create border walls
             for (int i = 0; i < 10; i++) {
                 wallList.add(new Rect(i * cellSize, 2 * cellSize, i * cellSize + cellSize, 3 * cellSize));
+                typeList.add(true); // brick
                 wallList.add(new Rect(i * cellSize, 5 * cellSize, i * cellSize + cellSize, 6 * cellSize));
+                typeList.add(true); // brick
             }
             
             // Create center obstacles
             for (int i = 3; i < 8; i++) {
                 if ((i + seed) % 3 == 0) {
                     wallList.add(new Rect(i * cellSize, 8 * cellSize, i * cellSize + cellSize, 10 * cellSize));
+                    typeList.add((seed + i) % 2 == 0); // mix of brick and steel
                     wallList.add(new Rect(i * cellSize, 12 * cellSize, i * cellSize + cellSize, 14 * cellSize));
+                    typeList.add((seed + i) % 2 == 0);
                 }
             }
             
             // Create side barriers
             wallList.add(new Rect(2 * cellSize, 10 * cellSize, 3 * cellSize, 14 * cellSize));
+            typeList.add(false); // steel
             wallList.add(new Rect(12 * cellSize, 10 * cellSize, 13 * cellSize, 14 * cellSize));
+            typeList.add(false); // steel
             
             // Base protection
             wallList.add(new Rect(9 * cellSize, 18 * cellSize, 10 * cellSize, 19 * cellSize));
+            typeList.add(true); // brick
             wallList.add(new Rect(11 * cellSize, 18 * cellSize, 12 * cellSize, 19 * cellSize));
+            typeList.add(true); // brick
         }
         
         public boolean checkCollision(Rect rect) {
@@ -771,9 +823,130 @@ public class MainActivity extends AppCompatActivity {
         }
         
         public void draw(Canvas canvas, Paint paint) {
-            paint.setColor(Color.GRAY);
-            for (Rect wall : walls) {
-                canvas.drawRect(wall, paint);
+            for (int i = 0; i < walls.length; i++) {
+                Rect rect = walls[i];
+                boolean isBrick = wallTypes[i];
+                
+                // Draw brick wall with 3D effect
+                if (isBrick) {
+                    // Main brick color
+                    paint.setColor(Color.rgb(180, 100, 60));
+                    canvas.drawRect(rect, paint);
+                    
+                    // Brick pattern lines
+                    paint.setColor(Color.rgb(140, 70, 40));
+                    paint.setStrokeWidth(2);
+                    int brickHeight = 10;
+                    for (int y = rect.top; y < rect.bottom; y += brickHeight) {
+                        canvas.drawLine(rect.left, y, rect.right, y, paint);
+                    }
+                    // Vertical brick lines (alternating rows)
+                    for (int y = rect.top; y < rect.bottom; y += brickHeight * 2) {
+                        for (int x = rect.left + 10; x < rect.right; x += 20) {
+                            canvas.drawLine(x, y, x, y + brickHeight, paint);
+                        }
+                    }
+                    for (int y = rect.top + brickHeight; y < rect.bottom; y += brickHeight * 2) {
+                        for (int x = rect.left; x < rect.right; x += 20) {
+                            canvas.drawLine(x, y, x, y + brickHeight, paint);
+                        }
+                    }
+                } 
+                // Steel wall with metallic effect
+                else {
+                    // Steel gradient effect
+                    paint.setColor(Color.rgb(150, 150, 160));
+                    canvas.drawRect(rect, paint);
+                    
+                    // Metallic shine lines
+                    paint.setColor(Color.rgb(200, 200, 210));
+                    paint.setStrokeWidth(2);
+                    canvas.drawLine(rect.left + 5, rect.top + 5, rect.right - 5, rect.top + 5, paint);
+                    canvas.drawLine(rect.left + 5, rect.top + 10, rect.right - 5, rect.top + 10, paint);
+                    
+                    // Border
+                    paint.setColor(Color.rgb(100, 100, 110));
+                    paint.setStrokeWidth(3);
+                    canvas.drawRect(rect, paint);
+                }
+            }
+        }
+    }
+    
+    // Explosion class for visual effects
+    class Explosion {
+        private float x, y;
+        private int frame;
+        private int maxFrames = 15;
+        private java.util.ArrayList<Particle> particles = new java.util.ArrayList<>();
+        
+        public Explosion(float x, float y) {
+            this.x = x;
+            this.y = y;
+            this.frame = 0;
+            // Create particles
+            for (int i = 0; i < 20; i++) {
+                particles.add(new Particle(x, y));
+            }
+        }
+        
+        public void update() {
+            frame++;
+            for (Particle p : particles) {
+                p.update();
+            }
+        }
+        
+        public boolean isFinished() {
+            return frame > maxFrames;
+        }
+        
+        public void draw(Canvas canvas, Paint paint) {
+            // Draw expanding fire rings
+            if (frame < 5) {
+                float radius = 10 + frame * 5;
+                paint.setColor(Color.YELLOW);
+                canvas.drawCircle(x, y, radius, paint);
+                paint.setColor(Color.RED);
+                canvas.drawCircle(x, y, radius * 0.6f, paint);
+            } else if (frame < 10) {
+                float radius = 35 - (frame - 5) * 3;
+                paint.setColor(Color.ORANGE);
+                canvas.drawCircle(x, y, radius, paint);
+            }
+            
+            // Draw particles
+            for (Particle p : particles) {
+                p.draw(canvas, paint);
+            }
+        }
+        
+        private class Particle {
+            private float x, y, vx, vy;
+            private int life = 20;
+            private int color;
+            
+            public Particle(float x, float y) {
+                this.x = x;
+                this.y = y;
+                float angle = (float)(Math.random() * 2 * Math.PI);
+                float speed = (float)(Math.random() * 5 + 2);
+                vx = (float)Math.cos(angle) * speed;
+                vy = (float)Math.sin(angle) * speed;
+                color = Math.random() > 0.5 ? Color.YELLOW : Color.RED;
+            }
+            
+            public void update() {
+                x += vx;
+                y += vy;
+                life--;
+                if (life < 10) color = Color.GRAY;
+            }
+            
+            public void draw(Canvas canvas, Paint paint) {
+                if (life <= 0) return;
+                paint.setColor(color);
+                canvas.drawCircle(x, y, 3, paint);
             }
         }
     }
