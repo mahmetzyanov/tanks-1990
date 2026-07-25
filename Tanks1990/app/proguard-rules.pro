@@ -1,0 +1,3 @@
+-dontwarn okhttp3.**
+-dontwarn okio.**
+-keep class com.tanks1990.game.** { *; }
